@@ -66,7 +66,7 @@ Shell gotcha (2026-10-04): don't end a line with `2>&1` and then continue with `
 |---|---|---|
 | Deleting the local folder contents, then a normal bisync | Bisync treats it as you deleting everything, and **deletes it on Drive too** (above 50% `--max-delete` it aborts instead) | Run `--resync` (see below), which merges and restores from Drive |
 | `--resync` | Ignores the saved state and merges both sides. Nothing is deleted, but files you deleted on one side come back | `--dry-run` first |
-| Renaming a big local folder | Re-uploads everything and deletes the old copies on Drive (ISSUES #4) | Rename on the Drive web UI, or test `--track-renames` |
+| Renaming a big local folder | Re-uploads everything and deletes the old copies on Drive (ISSUES #4) | Stop the watcher, rename to the same name **on both sides** (laptop + Drive web), start the watcher, then sync. Bisync sees agreement, so nothing moves |
 | Changing compare or filter flags | Old listings no longer match the new rules | Run `--resync` once (as done when adding `--drive-skip-shortcuts`) |
 
 ## Start completely fresh (one remote)

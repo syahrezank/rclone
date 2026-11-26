@@ -19,8 +19,8 @@ Claude can then read `~/.script/systemd-capture.txt` through the device bridge.
 `rclone-trigger-bisync` presumably calls `systemctl start` without `--no-block`. On a `Type=oneshot` unit that waits until the run ends. On 2026-11-26 the watcher sat inside `trigger_sync` for 15+ minutes. Events queue in the pipe and are handled afterwards, so nothing is lost, but a large burst then floods the journal with one "within cooldown" line per event.
 **Fix:** Use `systemctl start --no-block` in the helper (needs #1 first). Possibly also throttle the per-event cooldown log line.
 
-### #3 [M] Journal is blind during a run
-The script captures rclone output with `OUTPUT=$(...)` and only prints it when the run ends, so `journalctl -f` shows nothing while it's running. `--progress` also floods the journal with redraw lines (tens of thousands of lines for one run on 2026-11-26).
+### #3 [H] Journal is blind during a run, and drops lines after big runs
+The script captures rclone output with `OUTPUT=$(...)` and only prints it when the run ends, so `journalctl -f` shows nothing while it's running. `--progress` also floods the journal with redraw lines (tens of thousands of lines for one run on 2026-11-26). On 2026-11-26 that burst very likely tripped journald's default rate limit (10 000 lines / 30 s per unit), and **log lines were dropped**: the end of a pass, the retry message, the next pass's start. Errors could be lost the same way. To confirm: `journalctl --since <time> | grep -i suppressed`.
 **Fix:** Stream output with `| tee "/tmp/rclone-bisync-${REMOTE_NAME}.out"`, grep that file for conflicts, drop `--progress`, and add `--stats 30s --stats-one-line`.
 
 ### #4 [H] Renaming a local folder re-uploads everything and deletes the originals on Drive
@@ -41,6 +41,10 @@ Each retry does a full listing of both sides (~14k objects, ~10 s for listings a
 
 ### #8 [L] Watcher's lock probe can race with the bisync script
 `flock -n "$LOCK_FILE" true` takes the lock for an instant. If the bisync service starts at that exact moment, it logs "already running, skipping" for a run that wasn't running. It's very unlikely and self-healing on the next trigger.
+
+### #9 [M] Notes-app vault open inside the synced folder
+Since 2026-11-26 an Obsidian vault lives in `~/Gdrive` and is open in the app. The app rewrites its config and workspace files while you use it, so the watcher triggers frequent full bisync runs (~20 s each, listing ~14k objects). The vault also has its own sync plugin (Remotely Save). **Two sync systems on the same files can fight**: overwrites, conflicts, or ping-pong uploads. That depends on where the plugin syncs to, which is unknown.
+**Options:** Pick one sync system for the vault. If bisync stays, consider excluding the app's volatile workspace files with a filter (this changes the filter set, so it needs a `--dry-run` + `--resync`; check the exact rclone filter rules and bisync's filter-change behaviour before doing it).
 
 ## Closed
 

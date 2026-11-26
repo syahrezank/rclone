@@ -7,6 +7,7 @@ Real cases from this project. Add a row whenever a new one is solved.
 | Symptom / message | Cause | Fix |
 |---|---|---|
 | `Bisync already running for <remote>, skipping` repeatedly | A real run is still active (a long transfer, or the retry loop starting another pass). The flock can't go stale | Check `ps` and `/proc/<pid>/io` ([runbook](runbook.md#already-running-skipping-is-it-really-running)). 2026-11-26: a folder rename took ~15 min |
+| A run takes 10+ min with `Path2: N changes: X new, 0 modified, X deleted` (equal counts) | A local folder rename. Bisync re-uploads everything under the new name, then deletes the old copies. Drive allows ~3 writes/s per account | Let it finish. Next time, rename on both sides before syncing (ISSUES #4) |
 | Journal shows `Starting bisync.` and then nothing for minutes | Output is captured into `$OUTPUT` and printed only at the end | Normal for now. ISSUES #3 fixes it |
 | `cannot find prior Path1 or Path2 listings` | No `--resync` has ever been done for this remote/path pair (or the state was deleted) | Run a `--dry-run --resync`, then a real `--resync` once |
 | `Fatal error: unknown flag: --drive-skip-duplicates` | **The flag doesn't exist.** An earlier Claude session invented it | Remove it. Verify flags with `rclone help flags \| grep <word>` |

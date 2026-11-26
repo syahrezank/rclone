@@ -1,0 +1,24 @@
+# Secrets: never commit these
+rclone.conf
+*.conf
+*token*
+*.pem
+*.key
+.env
+.env.*
+
+# rclone bisync working/state files
+*.lck
+*.lst
+*.lst-new
+*.lst-err
+*.lst-dry*
+
+# Logs and journal dumps (may contain Drive file names)
+*.log
+journal-*.txt
+
+# System
+.DS_Store
+Thumbs.db
+__pycache__/

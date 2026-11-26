@@ -1,0 +1,46 @@
+# Open issues and ideas
+
+Priority: **H** = causes wrong or missed syncs or data risk · **M** = makes debugging hard or wastes resources · **L** = nice to have.
+Close an item by moving it to *Closed* with the date and the fix.
+
+## Open
+
+### #1 [M] Systemd units and trigger helper not captured in this repo
+Only the two scripts are in `config/`. To capture the rest, run this once on the laptop:
+```bash
+{ systemctl list-unit-files 'rclone*'; echo; systemctl cat 'rclone-*' 2>&1; echo; \
+  echo '===== /usr/local/bin/rclone-trigger-bisync'; cat /usr/local/bin/rclone-trigger-bisync; echo; \
+  echo '===== sudoers'; sudo grep -rh rclone /etc/sudoers /etc/sudoers.d/ 2>/dev/null; \
+  echo; rclone version; } > ~/.script/systemd-capture.txt 2>&1
+```
+Claude can then read `~/.script/systemd-capture.txt` through the device bridge.
+
+### #2 [M] Watcher freezes for the whole length of a bisync run
+`rclone-trigger-bisync` presumably calls `systemctl start` without `--no-block`. On a `Type=oneshot` unit that waits until the run ends. On 2026-11-26 the watcher sat inside `trigger_sync` for 15+ minutes. Events queue in the pipe and are handled afterwards, so nothing is lost, but a large burst then floods the journal with one "within cooldown" line per event.
+**Fix:** Use `systemctl start --no-block` in the helper (needs #1 first). Possibly also throttle the per-event cooldown log line.
+
+### #3 [M] Journal is blind during a run
+The script captures rclone output with `OUTPUT=$(...)` and only prints it when the run ends, so `journalctl -f` shows nothing while it's running. `--progress` also floods the journal with redraw lines (tens of thousands of lines for one run on 2026-11-26).
+**Fix:** Stream output with `| tee "/tmp/rclone-bisync-${REMOTE_NAME}.out"`, grep that file for conflicts, drop `--progress`, and add `--stats 30s --stats-one-line`.
+
+### #4 [H] Renaming a local folder re-uploads everything and deletes the originals on Drive
+On 2026-11-26 a local rename of a ~716-file folder showed up as 716 new + 716 deleted. That run took ~15 min (≈116 MiB re-uploaded), and the post-check loop then started another full run. On Drive the old files are deleted and new ones uploaded, which likely means **new file IDs** (old share links break, and version history stays with the deleted copies). Unverified, but expected.
+**Idea:** The docs recommend `--track-renames`, supported by bisync since v1.66 and not usable during `--resync`. To do: check `rclone version`, check how it interacts with `--compare size,modtime` (rename tracking needs a hash, and Drive provides MD5), and test with `--dry-run`. Until then, rename big folders on the Drive web UI and let bisync pull the change. Whether that is handled as a rename is also to be verified.
+
+### #5 [L] Conflict notification points at the wrong unit name
+The script's notify text says `journalctl -u rclone-bisync-${REMOTE_NAME}.service`. The real unit is `rclone-bisync-Gdrive@${REMOTE_NAME}.service`. It's harmless while `NOTIFY=false`. The same old name is in `unused/rclone-manual-Gdrive.sh`.
+
+### #6 [L] Duplicate files on the Google side
+The `Gdrive` remote logs ~45 "Duplicate object found in source - ignoring" notices every run, all in one folder. One copy of each is never synced locally.
+**Fix:** Review with `rclone dedupe --dedupe-mode list "Gdrive:<folder>"`, then dedupe (interactively or with `newest`). It's safe to run while bisync isn't running, and the next bisync just sees deletions on Path1.
+
+### #7 [L] Retry loop re-lists everything each time
+Each retry does a full listing of both sides (~14k objects, ~10 s for listings alone) plus a full post-check listing. That's fine normally, but it multiplies after big changes. Consider leaving it as is. Noted so it doesn't get "rediscovered" as a bug.
+
+### #8 [L] Watcher's lock probe can race with the bisync script
+`flock -n "$LOCK_FILE" true` takes the lock for an instant. If the bisync service starts at that exact moment, it logs "already running, skipping" for a run that wasn't running. It's very unlikely and self-healing on the next trigger.
+
+## Closed
+
+- **2026-11-26: "Bisync stuck"** was a false alarm. The run was busy syncing a folder rename (#4). See `sessions/2026-11-26.md`.
+- **2026-10-04: Lock files left behind by crashes.** Prevented by the switch to `flock` plus `--max-lock 30m`.
